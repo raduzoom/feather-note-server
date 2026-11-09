@@ -1,0 +1,48 @@
+# Feather Cloud stack. The server service is wired in Phase 7.
+# Postgres is deliberately not published to the host: 5432 stays inside Docker.
+# S3-compatible storage is SeaweedFS (MinIO no longer publishes images):
+# S3 API on host port 8421, filer web UI on 8422.
+name: feather
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-feather}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-feather-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-feather}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  s3:
+    image: chrislusf/seaweedfs:4.30
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+    # Writes the S3 identity file from the env vars above, then starts
+    # master, volume, filer and S3 gateway in one process.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '{"identities":[{"name":"feather","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    ports:
+      - "8421:8333"
+      - "8422:8888"
+    volumes:
+      - s3data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  s3data:
