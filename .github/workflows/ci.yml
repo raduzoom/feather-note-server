@@ -1,9 +1,15 @@
 name: ci
 
+# TODO(ci): automatic runs are off to save github.com Actions minutes (2026-11-09).
+# To turn them back on, replace the `on:` block with:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+# Until then, run the local checks in AGENTS.md before pushing; a manual run is
+# still possible from the Actions tab (Run workflow).
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   vet-test:
