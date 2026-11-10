@@ -14,15 +14,30 @@ on:
 jobs:
   vet-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: server
+      # The contract tests read ../universal/specs/sync-protocol.openapi.yaml. The universal repo is private:
+      # UNIVERSAL_READ_TOKEN is a fine-grained, read-only token for raduzoom/feather-note-universal, created by
+      # the repo owner. Until that secret exists, this step fails.
+      - uses: actions/checkout@v4
+        with:
+          repository: raduzoom/feather-note-universal
+          path: universal
+          token: ${{ secrets.UNIVERSAL_READ_TOKEN }}
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-          cache: false # no dependencies yet; enable when Phase 7 adds go.sum
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
       - name: Vet
-        run: go vet ./...
+        run: go vet ./... && go vet -tags integration ./...
       - name: Test
         run: go test ./...
-      - name: Validate compose file
-        run: docker compose -f deploy/docker-compose.yml config -q
+      - name: Validate compose files
+        run: FEATHER_SERVER_SECRET=ci docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml config -q
+      - name: Integration tests (Postgres and SeaweedFS in Docker)
+        run: FEATHER_SERVER_SECRET=ci docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml run --rm test
