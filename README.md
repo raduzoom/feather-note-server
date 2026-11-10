@@ -26,7 +26,7 @@ To run your own server, see [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Related repositories
 
-- `feather-note-mac`: the macOS app (MIT)
+- `feathermark-apple`: the Apple apps, macOS now and iPhone and iPad to come, with their shared Swift packages (MIT)
 - `feather-note-universal`: specs, sync protocol, crypto test vectors, designs and plans (CC BY 4.0)
 
 ## License
