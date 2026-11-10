@@ -1,6 +1,6 @@
 # Self-hosting Feather Cloud
 
-Feather Cloud is the sync server for Feather Note. You can run your own: it stores only encrypted data, which it cannot read, and the Mac app talks to it like the hosted service.
+Feather Cloud is the sync server for FeatherMark. You can run your own: it stores only encrypted data, which it cannot read, and the Mac app talks to it like the hosted service.
 
 ## What you need
 
@@ -44,7 +44,7 @@ Run Caddy on the same machine (it reaches the server at `localhost:8420`). Caddy
 
 ## Connect the app
 
-In Feather Note, open Settings › Advanced › Server and enter `https://notes.example.com`. With billing off, the app shows no trial or subscription screens: every account is active, with the quota you set.
+In FeatherMark, open Settings › Advanced › Server and enter `https://notes.example.com`. With billing off, the app shows no trial or subscription screens: every account is active, with the quota you set.
 
 ## Verification codes
 

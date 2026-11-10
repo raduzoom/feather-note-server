@@ -1,6 +1,6 @@
 # Feather Cloud server
 
-The sync server for Feather Note, a free native Markdown note app. Feather Cloud is end-to-end encrypted: the server stores versioned encrypted blobs and an opaque envelope (item id, type, version, size, timestamps) and cannot read titles, notebook names, tags or note text. You can use the hosted service or run your own.
+The sync server for FeatherMark, a free native Markdown note app. Feather Cloud is end-to-end encrypted: the server stores versioned encrypted blobs and an opaque envelope (item id, type, version, size, timestamps) and cannot read titles, notebook names, tags or note text. You can use the hosted service or run your own.
 
 ## Running locally
 
@@ -35,4 +35,4 @@ AGPL-3.0, see [LICENSE](LICENSE).
 
 ## Trademark
 
-The name Feather Note stays with the author. Forks must use a different name.
+The name FeatherMark stays with the author. Forks must use a different name.

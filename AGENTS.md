@@ -1,6 +1,6 @@
 # Feather Cloud server: agent rules
 
-Rules for AI agents in this repo. `CLAUDE.md` is a symlink to this file. The shared rules for all three Feather Note repos are in `../AGENTS.md`; global rules in `~/Dropbox/Configs/claude/AGENTS.md` still apply.
+Rules for AI agents in this repo. `CLAUDE.md` is a symlink to this file. The shared rules for all three FeatherMark repos are in `../AGENTS.md`; global rules in `~/Dropbox/Configs/claude/AGENTS.md` still apply.
 
 ## Ports (when running or adding any server)
 
