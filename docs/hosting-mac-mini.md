@@ -71,11 +71,11 @@ cd ~/feather-note-server && docker compose -f deploy/docker-compose.yml -f deplo
 
 `deploy/macmini/backup.sh` saves the database and the encrypted files into `~/FeatherCloudBackups/<date>/` and keeps 14 days; older folders are deleted outright, not moved to the Trash. Install the daily 03:30 run:
 
-1. Edit `deploy/macmini/app.feathernote.backup.plist` and replace `SERVER_REPO` with the repo's full path, for example `/Users/you/feather-note-server`.
+1. Edit `deploy/macmini/app.feathermark.backup.plist` and replace `SERVER_REPO` with the repo's full path, for example `/Users/you/feather-note-server`.
 2. Then run:
 
    ```bash
-   cp ~/feather-note-server/deploy/macmini/app.feathernote.backup.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathernote.backup.plist
+   cp ~/feather-note-server/deploy/macmini/app.feathermark.backup.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathermark.backup.plist
    ```
 
 Run one backup by hand and check its folder has `postgres.dump` and `s3data.tgz`:

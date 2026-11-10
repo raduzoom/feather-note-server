@@ -3,13 +3,13 @@
 <!--
   Runs the Feather Cloud backup every day at 03:30 (docs/hosting-mac-mini.md, "Backups").
   Replace SERVER_REPO with the server repo's full path, then:
-    cp deploy/macmini/app.feathernote.backup.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathernote.backup.plist
+    cp deploy/macmini/app.feathermark.backup.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathermark.backup.plist
 -->
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>app.feathernote.backup</string>
+	<string>app.feathermark.backup</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
