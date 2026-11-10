@@ -40,6 +40,11 @@ func (c *contract) RoundTrip(req *http.Request) (*http.Response, error) {
 	path := strings.TrimPrefix(req.URL.Path, "/v1")
 	if strings.HasPrefix(req.URL.Path, "/v1/") {
 		ok, errs := c.v.ValidateHttpResponse(req, &check)
+		// sync-protocol.md "Errors": 500 server_error can come from any route ("Anything else"); the OpenAPI file
+		// doesn't repeat it per operation. Accept exactly that body.
+		if res.StatusCode == 500 && bytes.Equal(bytes.TrimSpace(body), []byte(`{"error":{"code":"server_error","message":"Internal error."}}`)) {
+			ok, errs = true, nil
+		}
 		c.mu.Lock()
 		c.seen[req.Method+" "+pattern(path)] = true
 		if !ok {

@@ -25,6 +25,9 @@ services:
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+      # Storage holds 1 GB volumes, at most this many (so about this many GB).
+      # SeaweedFS's default of 8 volumes filled up after one bucket.
+      SEAWEED_VOLUME_MAX: ${SEAWEED_VOLUME_MAX:-100}
     # Writes the S3 identity file from the env vars above, then starts
     # master, volume, filer and S3 gateway in one process.
     entrypoint:
@@ -32,7 +35,7 @@ services:
       - -c
       - |
         printf '{"identities":[{"name":"feather","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
-        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024 -volume.max="$$SEAWEED_VOLUME_MAX"
     ports:
       - "127.0.0.1:8421:8333"
       - "127.0.0.1:8422:8888"
@@ -61,6 +64,12 @@ services:
       FEATHER_QUOTA_BYTES: ${FEATHER_QUOTA_BYTES:-10737418240}
       FEATHER_MAX_BLOB_BYTES: ${FEATHER_MAX_BLOB_BYTES:-104857600}
       FEATHER_TRUST_PROXY: ${FEATHER_TRUST_PROXY:-false}
+      FEATHER_MAIL: ${FEATHER_MAIL:-log}
+      FEATHER_SMTP_HOST: ${FEATHER_SMTP_HOST:-}
+      FEATHER_SMTP_PORT: ${FEATHER_SMTP_PORT:-587}
+      FEATHER_SMTP_USERNAME: ${FEATHER_SMTP_USERNAME:-}
+      FEATHER_SMTP_PASSWORD: ${FEATHER_SMTP_PASSWORD:-}
+      FEATHER_SMTP_FROM: ${FEATHER_SMTP_FROM:-}
     ports:
       - "127.0.0.1:8420:8420"
     depends_on:
