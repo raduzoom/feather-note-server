@@ -56,11 +56,30 @@ func TestRules(t *testing.T) {
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.1:5555"
-	if ClientIP(r, true) != "10.0.0.1" {
+	if ClientIP(r, true, "") != "10.0.0.1" {
 		t.Fatal("no header")
 	}
 	r.Header.Set("X-Forwarded-For", "1.1.1.1, 2.2.2.2")
-	if ClientIP(r, true) != "2.2.2.2" || ClientIP(r, false) != "10.0.0.1" {
-		t.Fatalf("%s %s", ClientIP(r, true), ClientIP(r, false))
+	if ClientIP(r, true, "") != "2.2.2.2" || ClientIP(r, false, "") != "10.0.0.1" {
+		t.Fatalf("%s %s", ClientIP(r, true, ""), ClientIP(r, false, ""))
+	}
+}
+
+// Review Focus 3: behind Cloudflare every request comes from the tunnel; the visitor is in Cf-Connecting-Ip
+func TestClientIPFromNamedHeader(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "172.18.0.5:41000"
+	r.Header.Set("Cf-Connecting-Ip", " 203.0.113.9 ")
+	r.Header.Set("X-Forwarded-For", "198.51.100.7, 172.18.0.5")
+	if got := ClientIP(r, true, "Cf-Connecting-Ip"); got != "203.0.113.9" {
+		t.Fatalf("named header: %s", got)
+	}
+	r.Header.Del("Cf-Connecting-Ip")
+	if got := ClientIP(r, true, "Cf-Connecting-Ip"); got != "172.18.0.5" {
+		t.Fatalf("fallback to the last X-Forwarded-For hop: %s", got)
+	}
+	r.Header.Set("Cf-Connecting-Ip", "203.0.113.9")
+	if got := ClientIP(r, false, "Cf-Connecting-Ip"); got != "172.18.0.5" {
+		t.Fatalf("untrusted: %s", got)
 	}
 }

@@ -68,3 +68,35 @@ func TestErrorsNameTheVariable(t *testing.T) {
 		}
 	}
 }
+
+func TestSMTPSettings(t *testing.T) {
+	base := map[string]string{"FEATHER_DATABASE_URL": "postgres://x", "FEATHER_SERVER_SECRET": secret, "FEATHER_MAIL": "smtp",
+		"FEATHER_SMTP_HOST": "smtp.resend.com", "FEATHER_SMTP_USERNAME": "resend", "FEATHER_SMTP_PASSWORD": "pw", "FEATHER_SMTP_FROM": "codes@example.com"}
+	c, err := FromEnv(env(base))
+	if err != nil || c.Mail != "smtp" || c.SMTP.Host != "smtp.resend.com" || c.SMTP.Port != 587 || c.SMTP.Username != "resend" ||
+		c.SMTP.Password != "pw" || c.SMTP.From != "codes@example.com" {
+		t.Fatalf("%+v %v", c.SMTP, err)
+	}
+	for _, missing := range []string{"FEATHER_SMTP_HOST", "FEATHER_SMTP_USERNAME", "FEATHER_SMTP_PASSWORD", "FEATHER_SMTP_FROM"} {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		delete(m, missing)
+		if _, err := FromEnv(env(m)); err == nil || !strings.Contains(err.Error(), missing) {
+			t.Errorf("%s: %v", missing, err)
+		}
+	}
+	base["FEATHER_MAIL"] = "carrier-pigeon"
+	if _, err := FromEnv(env(base)); err == nil || !strings.Contains(err.Error(), "FEATHER_MAIL") {
+		t.Errorf("bad mail: %v", err)
+	}
+}
+
+func TestClientIPHeader(t *testing.T) {
+	c, err := FromEnv(env(map[string]string{"FEATHER_DATABASE_URL": "postgres://x", "FEATHER_SERVER_SECRET": secret,
+		"FEATHER_CLIENT_IP_HEADER": "Cf-Connecting-Ip"}))
+	if err != nil || c.ClientIPHeader != "Cf-Connecting-Ip" {
+		t.Fatalf("%q %v", c.ClientIPHeader, err)
+	}
+}

@@ -30,7 +30,9 @@ func (h *handlers) limit(w http.ResponseWriter, checks ...func() ratelimit.Decis
 	return true
 }
 
-func (h *handlers) ip(r *http.Request) string { return ratelimit.ClientIP(r, h.d.Config.TrustProxy) }
+func (h *handlers) ip(r *http.Request) string {
+	return ratelimit.ClientIP(r, h.d.Config.TrustProxy, h.d.Config.ClientIPHeader)
+}
 
 func (h *handlers) signup(w http.ResponseWriter, r *http.Request) {
 	ip := h.ip(r)

@@ -90,7 +90,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}()
 	fmt.Fprintf(stderr, "feather-server %s listening on %s (billing %v)\n", version, ln.Addr(), cfg.BillingEnabled)
-	handler := api.NewRouter(api.Deps{Config: cfg, DB: db, Mailer: mail.NewLog(stdout), Storage: storage, Clock: time.Now, Log: log, Version: version})
+	mailer := mail.NewLog(stdout)
+	if cfg.Mail == "smtp" {
+		mailer = mail.NewSMTP(mail.SMTPConfig{Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username,
+			Password: cfg.SMTP.Password, From: cfg.SMTP.From})
+	}
+	handler := api.NewRouter(api.Deps{Config: cfg, DB: db, Mailer: mailer, Storage: storage, Clock: time.Now, Log: log, Version: version})
 	if err := newHTTPServer(handler).Serve(ln); err != nil {
 		fmt.Fprintf(stderr, "feather-server: %v\n", err)
 		return 1

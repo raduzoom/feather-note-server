@@ -12,6 +12,12 @@ type S3Config struct {
 	Endpoint, Region, Bucket, AccessKey, SecretKey string
 }
 
+// SMTPConfig is the mail provider when Mail is "smtp".
+type SMTPConfig struct {
+	Host, Username, Password, From string
+	Port                           int
+}
+
 // Config is everything the server reads at start.
 type Config struct {
 	Addr           string
@@ -21,8 +27,10 @@ type Config struct {
 	BillingEnabled bool
 	QuotaBytes     int64 // every account's quota when billing is off
 	MaxBlobBytes   int64
-	Mail           string // "log"
+	Mail           string // "log" or "smtp"
+	SMTP           SMTPConfig
 	TrustProxy     bool   // use the last X-Forwarded-For hop as the client IP
+	ClientIPHeader string // with TrustProxy: a header holding the visitor's address (Cf-Connecting-Ip behind Cloudflare)
 }
 
 // FromEnv reads FEATHER_* variables; errors name the variable at fault.
@@ -43,7 +51,8 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			AccessKey: getenv("FEATHER_S3_ACCESS_KEY"),
 			SecretKey: getenv("FEATHER_S3_SECRET_KEY"),
 		},
-		Mail: get("FEATHER_MAIL", "log"),
+		Mail:           get("FEATHER_MAIL", "log"),
+		ClientIPHeader: getenv("FEATHER_CLIENT_IP_HEADER"),
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("FEATHER_DATABASE_URL is required")
@@ -69,8 +78,24 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	if c.TrustProxy, err = strconv.ParseBool(get("FEATHER_TRUST_PROXY", "false")); err != nil {
 		return c, fmt.Errorf("FEATHER_TRUST_PROXY must be true or false")
 	}
-	if c.Mail != "log" {
-		return c, fmt.Errorf("FEATHER_MAIL must be log")
+	switch c.Mail {
+	case "log":
+	case "smtp":
+		c.SMTP = SMTPConfig{Host: getenv("FEATHER_SMTP_HOST"), Username: getenv("FEATHER_SMTP_USERNAME"),
+			Password: getenv("FEATHER_SMTP_PASSWORD"), From: getenv("FEATHER_SMTP_FROM")}
+		for name, v := range map[string]string{"FEATHER_SMTP_HOST": c.SMTP.Host, "FEATHER_SMTP_USERNAME": c.SMTP.Username,
+			"FEATHER_SMTP_PASSWORD": c.SMTP.Password, "FEATHER_SMTP_FROM": c.SMTP.From} {
+			if v == "" {
+				return c, fmt.Errorf("%s is required when FEATHER_MAIL=smtp", name)
+			}
+		}
+		port, err := positive(get("FEATHER_SMTP_PORT", "587"))
+		if err != nil || port > 65535 {
+			return c, fmt.Errorf("FEATHER_SMTP_PORT must be a port number")
+		}
+		c.SMTP.Port = int(port)
+	default:
+		return c, fmt.Errorf("FEATHER_MAIL must be log or smtp, not %q", c.Mail)
 	}
 	return c, nil
 }

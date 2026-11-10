@@ -87,8 +87,14 @@ func (l *Limiter) Allow(rule Rule, key string) Decision {
 	return Decision{true, rule.Limit, rule.Limit - w.count, reset}
 }
 
-// ClientIP is the last X-Forwarded-For hop when the server sits behind a trusted proxy, else the peer address.
-func ClientIP(r *http.Request, trustProxy bool) string {
+// ClientIP is the visitor's address. Behind a trusted proxy: the named header when set and present (Cloudflare's
+// Cf-Connecting-Ip), else the last X-Forwarded-For hop. Otherwise the peer address.
+func ClientIP(r *http.Request, trustProxy bool, header string) string {
+	if trustProxy && header != "" {
+		if v := strings.TrimSpace(r.Header.Get(header)); v != "" {
+			return v
+		}
+	}
 	if trustProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			hops := strings.Split(xff, ",")
