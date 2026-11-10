@@ -27,8 +27,6 @@ type contract struct {
 
 var theContract *contract
 
-var knownSpecGap = map[string]bool{"GET /devices": true, "DELETE /devices/{device_id}": true, "GET /sync/pull": true, "GET /blobs/{sha256}": true}
-
 func (c *contract) RoundTrip(req *http.Request) (*http.Response, error) {
 	res, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
@@ -42,11 +40,6 @@ func (c *contract) RoundTrip(req *http.Request) (*http.Response, error) {
 	path := strings.TrimPrefix(req.URL.Path, "/v1")
 	if strings.HasPrefix(req.URL.Path, "/v1/") {
 		ok, errs := c.v.ValidateHttpResponse(req, &check)
-		// TODO(spec): sync-protocol.md gives a recovery-scope token 403 forbidden_scope on every route but
-		// set-password and logout; the OpenAPI file doesn't list 403 for these four. Remove once it does.
-		if res.StatusCode == 403 && knownSpecGap[req.Method+" "+pattern(path)] && bytes.Contains(body, []byte(`"forbidden_scope"`)) {
-			ok, errs = true, nil
-		}
 		c.mu.Lock()
 		c.seen[req.Method+" "+pattern(path)] = true
 		if !ok {
