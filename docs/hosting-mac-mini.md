@@ -2,18 +2,18 @@
 
 How Feather Cloud runs for 1.0.0: free (billing off), one storage quota for every account, in Docker on a Mac mini, reached through a Cloudflare Tunnel. Nothing on the Mac is opened to the internet: `cloudflared` dials out to Cloudflare, which serves the domain over HTTPS.
 
-Two placeholders appear until the domains exist:
-- `CLOUD_DOMAIN`: Feather Cloud's address, for example `cloud.example.app`;
-- `WEBSITE_DOMAIN`: the website's address.
+The website and Feather Cloud use two different domains. Two placeholders stand for them until they exist:
+- `CLOUD_DOMAIN`: Feather Cloud's address, on its own domain, for example `cloud.example-sync.app`;
+- `WEBSITE_DOMAIN`: the website's address, on another domain, served by Cloudflare Pages.
 
 Step 8 lists every place to replace them.
 
 ## 1. Domains
 
-1. In the Cloudflare dashboard, open **Domain Registration › Register Domains** and buy the website's domain.
-2. Feather Cloud can be a subdomain of it (`cloud.<website domain>`) or a second domain bought the same way.
+1. Website: in the Cloudflare dashboard, open **Domain Registration › Register Domains** and buy the website's domain.
+2. Feather Cloud: buy its domain the same way. If you buy it from another registrar, add it to Cloudflare with **Add a domain** and switch its nameservers to the two Cloudflare shows. The tunnel only works for a domain whose DNS is on Cloudflare.
 
-Both stay on Cloudflare's DNS.
+`CLOUD_DOMAIN` can be the bare domain or a subdomain of it, such as `cloud.<domain>`.
 
 ## 2. The tunnel
 
@@ -26,7 +26,7 @@ Both stay on Cloudflare's DNS.
 
 Pick a provider that sends from your own domain, for example [Resend](https://resend.com) or [Postmark](https://postmarkapp.com).
 
-1. Add `CLOUD_DOMAIN`, or the website domain, as a sending domain in the provider.
+1. Add Feather Cloud's domain as a sending domain in the provider. The codes then come from the domain the app talks to, not the website's.
 2. Add the DNS records it shows (SPF, DKIM, and usually a return-path CNAME) in Cloudflare **DNS › Records**. Wait until the provider shows the domain as verified.
 3. Create SMTP credentials:
    - **Resend:** host `smtp.resend.com`, port 587, user `resend`, and an API key as the password.
@@ -105,4 +105,7 @@ To restore, run `deploy/macmini/restore.sh ~/FeatherCloudBackups/<date>`. It sto
 Replace the placeholders, then rebuild:
 - **Mac app:** `mac/project.yml`, the `FeatherCloudURL: https://CLOUD_DOMAIN` line. Leave `FeatherCloudBilling: false` for 1.0.0.
 - **Email sender:** `FEATHER_SMTP_FROM` in `deploy/.env` on the Mac mini.
-- **Website:** nothing to replace for 1.0.0. Its pages link only within the site and to GitHub. In Cloudflare **Workers & Pages › Create › Pages › Connect to Git**, choose the `feather-note-website` repo, leave the build command empty, set the output directory to `site`, then add `WEBSITE_DOMAIN` under **Custom domains**.
+- **Website:**
+  1. In the website repo, replace `WEBSITE_DOMAIN` in every file under `site/` with the website's domain (canonical URLs, the sitemap, `robots.txt`, `llms.txt`, structured data). Then run `python3 scripts/check_site.py --publish`; it must print `site OK`.
+  2. In Cloudflare **Workers & Pages › Create › Pages › Connect to Git**, choose the `feather-note-website` repo, leave the build command empty, set the output directory to `site`, then add `WEBSITE_DOMAIN` under **Custom domains**.
+  3. Add the site to [Google Search Console](https://search.google.com/search-console) and [Bing Webmaster Tools](https://www.bing.com/webmasters) (Bing also feeds Copilot and ChatGPT search), verify it with the DNS record each one shows, and submit `https://WEBSITE_DOMAIN/sitemap.xml`.
