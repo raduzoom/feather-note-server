@@ -40,6 +40,16 @@ Add `go test -tags integration -count=1 -run <Name> ./internal/api/` after `test
 - Schema changes are new files in `internal/store/migrations/` (`NNNN_name.sql`); never edit a shipped one.
 - Never log request bodies, query values other than `limit`, tokens, keys, codes or emails (`TestLogNeverContainsBodiesOrQueries`, `TestScriptedClient`). Internal errors are logged by type only.
 
+## Hosting (when changing deployment, mail or client addresses)
+
+- Feather Cloud 1.0.0 runs on the user's Mac mini: `docker compose -f deploy/docker-compose.yml -f deploy/macmini/docker-compose.macmini.yml up -d --build --wait`, billing off, one quota, no published ports, a `cloudflared` tunnel in front. The runbook is `docs/hosting-mac-mini.md`; secrets live only in the Mac mini's `deploy/.env`.
+- Behind Cloudflare, rate limits key on `Cf-Connecting-Ip` (`FEATHER_CLIENT_IP_HEADER`, read only with `FEATHER_TRUST_PROXY=true`).
+- Mail: `FEATHER_MAIL=log` (development, self-hosters without email) or `smtp` with `FEATHER_SMTP_*`. A host other than `localhost` must offer STARTTLS, or the send fails.
+- SeaweedFS uses 1 GB volumes, at most `SEAWEED_VOLUME_MAX` (default 100): that's the storage capacity in GB. Its default of 8 volumes fills up after one bucket; integration tests share the bucket `feather-test` with a prefix per test for the same reason.
+- Every Mac mini service has `restart: unless-stopped`, and nothing is published; `deploy/macmini/config_test.sh` checks both (prints "macmini config: OK").
+- Backups: `deploy/macmini/backup.sh`, `restore.sh`, and `backup_test.sh` (backs up a throwaway compose project, `feather-bt`, changes it, restores onto it, checks pruning; prints "backup restores: OK"; `FEATHER_BT_KEEP=1` leaves the stack up after a failure). Pruning deletes outright: a headless Mac never empties the Trash. Restore empties the database schema and the storage volume first.
+- Docker reports a container unhealthy for a few seconds after `unpause`, and `up --wait` fails on that; `backup.sh` waits until storage is healthy again before it exits.
+
 ## Dropbox (after cloning, after a build, and after git work)
 
 ```bash

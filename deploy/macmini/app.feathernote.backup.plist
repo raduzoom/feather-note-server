@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs the Feather Cloud backup every day at 03:30 (docs/hosting-mac-mini.md, "Backups").
+  Replace SERVER_REPO with the server repo's full path, then:
+    cp deploy/macmini/app.feathernote.backup.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathernote.backup.plist
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>app.feathernote.backup</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>SERVER_REPO/deploy/macmini/backup.sh</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>3</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/tmp/feather-backup.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/feather-backup.log</string>
+</dict>
+</plist>

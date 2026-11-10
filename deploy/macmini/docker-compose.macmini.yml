@@ -1,0 +1,33 @@
+# Feather Cloud on a Mac mini, reached through a Cloudflare Tunnel (docs/hosting-mac-mini.md).
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/macmini/docker-compose.macmini.yml up -d --build --wait
+#
+# Nothing is published on the Mac: cloudflared dials out to Cloudflare, which serves CLOUD_DOMAIN over HTTPS and
+# forwards to server:8420 on the compose network. Billing is off for 1.0.0: every account is active with one quota.
+# Every service restarts by itself, so the stack comes back after a reboot or power cut (config_test.sh checks).
+services:
+  postgres:
+    restart: unless-stopped
+
+  server:
+    ports: !reset []
+    environment:
+      FEATHER_BILLING: "off"
+      FEATHER_QUOTA_BYTES: ${FEATHER_QUOTA_BYTES:-1073741824}
+      FEATHER_TRUST_PROXY: "true"
+      FEATHER_CLIENT_IP_HEADER: Cf-Connecting-Ip
+      FEATHER_MAIL: smtp
+
+  s3:
+    ports: !reset []
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in deploy/.env (Cloudflare Zero Trust > Networks > Tunnels)}
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
