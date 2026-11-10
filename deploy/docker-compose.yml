@@ -1,7 +1,8 @@
-# Feather Cloud stack. The server service is wired in Phase 7.
+# Feather Cloud stack: the server, Postgres and S3-compatible storage. docs/self-hosting.md explains the setup.
 # Postgres is deliberately not published to the host: 5432 stays inside Docker.
 # S3-compatible storage is SeaweedFS (MinIO no longer publishes images):
-# S3 API on host port 8421, filer web UI on 8422.
+# S3 API on host port 8421, filer web UI on 8422. Every published port is bound to 127.0.0.1: the filer UI has no
+# login, and only a reverse proxy on this machine should reach the server.
 name: feather
 
 services:
@@ -33,8 +34,8 @@ services:
         printf '{"identities":[{"name":"feather","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
         exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json
     ports:
-      - "8421:8333"
-      - "8422:8888"
+      - "127.0.0.1:8421:8333"
+      - "127.0.0.1:8422:8888"
     volumes:
       - s3data:/data
     healthcheck:
@@ -42,6 +43,37 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  server:
+    build:
+      context: ..
+      args:
+        VERSION: ${FEATHER_VERSION:-dev}
+    environment:
+      FEATHER_DATABASE_URL: postgres://${POSTGRES_USER:-feather}:${POSTGRES_PASSWORD:-feather-dev}@postgres:5432/${POSTGRES_DB:-feather}?sslmode=disable
+      FEATHER_S3_ENDPOINT: http://s3:8333
+      FEATHER_S3_BUCKET: ${FEATHER_S3_BUCKET:-feather}
+      FEATHER_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
+      FEATHER_S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+      # required; generate with: openssl rand -hex 32
+      FEATHER_SERVER_SECRET: ${FEATHER_SERVER_SECRET:?set FEATHER_SERVER_SECRET in deploy/.env (openssl rand -hex 32)}
+      FEATHER_BILLING: ${FEATHER_BILLING:-off}
+      FEATHER_QUOTA_BYTES: ${FEATHER_QUOTA_BYTES:-10737418240}
+      FEATHER_MAX_BLOB_BYTES: ${FEATHER_MAX_BLOB_BYTES:-104857600}
+      FEATHER_TRUST_PROXY: ${FEATHER_TRUST_PROXY:-false}
+    ports:
+      - "127.0.0.1:8420:8420"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/feather-server", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
 
 volumes:
   pgdata:

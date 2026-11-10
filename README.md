@@ -4,23 +4,25 @@ The sync server for Feather Note, a free native Markdown note app. Feather Cloud
 
 ## Running locally
 
-Postgres and S3-compatible storage (SeaweedFS):
+The whole stack (server on port 8420, Postgres, and SeaweedFS for encrypted files), after copying `deploy/.env.example` to `deploy/.env` and setting `FEATHER_SERVER_SECRET` (`openssl rand -hex 32`):
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d --wait
+docker compose -f deploy/docker-compose.yml up -d --build --wait
 ```
 
-The server (port 8420):
+Verification codes appear in `docker compose -f deploy/docker-compose.yml logs server`.
 
-```bash
-go run ./cmd/feather-server
-```
-
-Tests:
+Tests (unit, then integration against Postgres and SeaweedFS in Docker):
 
 ```bash
 go vet ./... && go test ./...
 ```
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml run --rm test
+```
+
+To run your own server, see [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Related repositories
 
