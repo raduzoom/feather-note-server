@@ -1,0 +1,28 @@
+# Integration tests, on the compose network so Postgres stays unpublished:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.test.yml run --rm test
+# The parent feather-note/ folder is mounted so ../universal (the OpenAPI file) resolves.
+services:
+  test:
+    image: golang:1.26
+    profiles: [test]
+    working_dir: /src/server
+    volumes:
+      - ../..:/src:ro
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    environment:
+      GOFLAGS: -buildvcs=false
+      FEATHER_TEST_DATABASE_URL: postgres://${POSTGRES_USER:-feather}:${POSTGRES_PASSWORD:-feather-dev}@postgres:5432/${POSTGRES_DB:-feather}?sslmode=disable
+      FEATHER_TEST_S3_ENDPOINT: http://s3:8333
+      FEATHER_TEST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
+      FEATHER_TEST_S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    command: ["go", "test", "-tags", "integration", "-count=1", "./..."]
+
+volumes:
+  gomod:
+  gocache:
