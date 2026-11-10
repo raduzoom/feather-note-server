@@ -103,7 +103,7 @@ To restore, run `deploy/macmini/restore.sh ~/FeatherCloudBackups/<date>`. It sto
 ## 8. Point the app and website at it
 
 Replace the placeholders, then rebuild:
-- **Mac app:** `mac/project.yml`, the `FeatherCloudURL: https://CLOUD_DOMAIN` line. Leave `FeatherCloudBilling: false` for 1.0.0.
+- **Mac app:** `apple/project.yml`, the `FeatherCloudURL: https://CLOUD_DOMAIN` line. Leave `FeatherCloudBilling: false` for 1.0.0.
 - **Email sender:** `FEATHER_SMTP_FROM` in `deploy/.env` on the Mac mini.
 - **Website:**
   1. In the website repo, replace `WEBSITE_DOMAIN` in every file under `site/` with the website's domain (canonical URLs, the sitemap, `robots.txt`, `llms.txt`, structured data). Then run `python3 scripts/check_site.py --publish`; it must print `site OK`.
