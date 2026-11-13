@@ -10,6 +10,8 @@ The whole stack (server on port 8420, Postgres, and SeaweedFS for encrypted file
 docker compose -f deploy/docker-compose.yml up -d --build --wait
 ```
 
+To let the web app call the server from a browser, set `FEATHER_ALLOWED_ORIGINS` in `deploy/.env` to a comma-separated list of exact origins, e.g. `https://app.feathermark.com,http://localhost:8431`. Unset, the server sends no CORS headers.
+
 Verification codes appear in `docker compose -f deploy/docker-compose.yml logs server`.
 
 Tests (unit, then integration against Postgres and SeaweedFS in Docker):

@@ -4,7 +4,9 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 )
 
 // S3Config locates the blob store (SeaweedFS locally, Cloudflare R2 hosted, any S3 for self-hosters).
@@ -29,8 +31,9 @@ type Config struct {
 	MaxBlobBytes   int64
 	Mail           string // "log" or "smtp"
 	SMTP           SMTPConfig
-	TrustProxy     bool   // use the last X-Forwarded-For hop as the client IP
-	ClientIPHeader string // with TrustProxy: a header holding the visitor's address (Cf-Connecting-Ip behind Cloudflare)
+	TrustProxy     bool     // use the last X-Forwarded-For hop as the client IP
+	AllowedOrigins []string // browser origins allowed by CORS; empty: no CORS headers
+	ClientIPHeader string   // with TrustProxy: a header holding the visitor's address (Cf-Connecting-Ip behind Cloudflare)
 }
 
 // FromEnv reads FEATHER_* variables; errors name the variable at fault.
@@ -78,6 +81,15 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	if c.TrustProxy, err = strconv.ParseBool(get("FEATHER_TRUST_PROXY", "false")); err != nil {
 		return c, fmt.Errorf("FEATHER_TRUST_PROXY must be true or false")
 	}
+	if raw := strings.TrimSpace(getenv("FEATHER_ALLOWED_ORIGINS")); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			o = strings.TrimSpace(o)
+			if err := checkOrigin(o); err != nil {
+				return c, fmt.Errorf("FEATHER_ALLOWED_ORIGINS: %v", err)
+			}
+			c.AllowedOrigins = append(c.AllowedOrigins, o)
+		}
+	}
 	switch c.Mail {
 	case "log":
 	case "smtp":
@@ -106,4 +118,16 @@ func positive(s string) (int64, error) {
 		return 0, fmt.Errorf("must be a positive number of bytes, not %q", s)
 	}
 	return n, nil
+}
+
+// checkOrigin accepts only scheme://host[:port]: no path, query, user, wildcard or trailing slash.
+func checkOrigin(o string) error {
+	u, err := url.Parse(o)
+	bad := fmt.Errorf("%q must be an origin like https://app.example.com (scheme, host, optional port; no path or wildcard)", o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Hostname() == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" ||
+		strings.ContainsAny(o, "*? #") || o != u.Scheme+"://"+u.Host {
+		return bad
+	}
+	return nil
 }

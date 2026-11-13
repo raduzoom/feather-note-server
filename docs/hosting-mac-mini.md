@@ -48,6 +48,7 @@ Pick a provider that sends from your own domain, for example [Resend](https://re
    - **Server secret:** `FEATHER_SERVER_SECRET`; generate it with `openssl rand -hex 32`.
    - **Quota:** `FEATHER_QUOTA_BYTES` is every account's storage. 1 GB is `1073741824`.
    - **Capacity:** `SEAWEED_VOLUME_MAX` is the storage capacity in GB. Backups keep 14 full copies of the stored files on the same disk (step 6), so keep it below about a fifteenth of the Mac mini's free disk, or move the backups elsewhere with `FEATHER_BACKUP_DIR`.
+   - **Web app:** `FEATHER_ALLOWED_ORIGINS` is the browser origins allowed to call the server, for the web app: `https://app.feathermark.com`. Add `,http://localhost:8431` to try the dev preview. Leave it empty and browsers are refused; the native apps don't need it.
    - **Email:** the `FEATHER_SMTP_*` values from step 3. Set `FEATHER_SMTP_FROM` to an address on the verified domain.
    - **Tunnel:** `CLOUDFLARE_TUNNEL_TOKEN` from step 2.
 

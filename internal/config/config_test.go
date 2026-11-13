@@ -100,3 +100,28 @@ func TestClientIPHeader(t *testing.T) {
 		t.Fatalf("%q %v", c.ClientIPHeader, err)
 	}
 }
+
+func TestAllowedOrigins(t *testing.T) {
+	base := map[string]string{"FEATHER_DATABASE_URL": "postgres://x", "FEATHER_SERVER_SECRET": secret}
+	with := func(v string) map[string]string {
+		m := map[string]string{"FEATHER_ALLOWED_ORIGINS": v}
+		for k, x := range base {
+			m[k] = x
+		}
+		return m
+	}
+	if c, err := FromEnv(env(with(""))); err != nil || len(c.AllowedOrigins) != 0 {
+		t.Fatalf("unset: %v %v", c.AllowedOrigins, err)
+	}
+	c, err := FromEnv(env(with("https://app.feathermark.com, http://localhost:8431")))
+	if err != nil || len(c.AllowedOrigins) != 2 || c.AllowedOrigins[0] != "https://app.feathermark.com" || c.AllowedOrigins[1] != "http://localhost:8431" {
+		t.Fatalf("list: %v %v", c.AllowedOrigins, err)
+	}
+	for _, bad := range []string{"*", "app.feathermark.com", "https://app.feathermark.com/", "https://app.feathermark.com/x", "https://*.feathermark.com",
+		"ftp://example.com", "https://a.com,", "https://a.com?x=1", "https://user@a.com", "//a.com", "https://"} {
+		_, err := FromEnv(env(with(bad)))
+		if err == nil || !strings.Contains(err.Error(), "FEATHER_ALLOWED_ORIGINS") {
+			t.Errorf("%q: err %v", bad, err)
+		}
+	}
+}

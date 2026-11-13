@@ -134,7 +134,7 @@ func NewRouter(d Deps) http.Handler {
 		w.WriteHeader(200)
 		_ = jsonEncode(w, health{Status: "ok", Version: d.Version})
 	})
-	return logx.Middleware(d.Log, readDeadline(time.Minute, 30*time.Minute, mux))
+	return logx.Middleware(d.Log, cors(d.Config.AllowedOrigins, readDeadline(time.Minute, 30*time.Minute, mux)))
 }
 
 func (h *handlers) serverInfo(w http.ResponseWriter, r *http.Request) {
