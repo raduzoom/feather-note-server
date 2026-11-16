@@ -31,7 +31,7 @@ func (s *Service) Prelogin(ctx context.Context, email string) (KDF, []byte, erro
 }
 
 // Login signs in with auth_key. Wrong email and wrong key are the same 401; a right key for a signup never
-// verified is 403 email_unverified.
+// verified is 403 email_unverified, whether or not the email has an account (see Signup).
 func (s *Service) Login(ctx context.Context, email string, authKey []byte, deviceName string) (Session, plans.Account, []byte, error) {
 	if !validDeviceName(deviceName) {
 		return Session{}, plans.Account{}, nil, httpx.InvalidRequest("Invalid device name.")
@@ -42,20 +42,30 @@ func (s *Service) Login(ctx context.Context, email string, authKey []byte, devic
 		Scan(&accountID, &stored, &wrapped)
 	if errors.Is(err, pgx.ErrNoRows) {
 		Equal(Hash(authKey), dummyHash)
-		var pending []byte
-		if s.DB.QueryRow(ctx, `SELECT auth_hash FROM pending_signups WHERE email_norm = $1`, email).Scan(&pending) == nil && Equal(Hash(authKey), pending) {
-			return Session{}, plans.Account{}, nil, httpx.ErrEmailUnverified
-		}
-		return Session{}, plans.Account{}, nil, httpx.ErrUnauthorized
+		return Session{}, plans.Account{}, nil, s.loginFailed(ctx, email, authKey)
 	}
 	if err != nil {
 		return Session{}, plans.Account{}, nil, err
 	}
 	if !Equal(Hash(authKey), stored) {
-		return Session{}, plans.Account{}, nil, httpx.ErrUnauthorized
+		return Session{}, plans.Account{}, nil, s.loginFailed(ctx, email, authKey)
 	}
-	session, account, err := s.startSession(ctx, accountID, deviceName, "full")
+	session, account, err := s.startSession(ctx, accountID, deviceName, "full", "auth_hash", authKey)
 	return session, account, wrapped, err
+}
+
+// loginFailed answers a key that opens no account: 403 email_unverified for the email's pending signup's key, else
+// 401. Both failures (no account, wrong key) come here, so they do the same database work.
+func (s *Service) loginFailed(ctx context.Context, email string, authKey []byte) error {
+	var pending []byte
+	err := s.DB.QueryRow(ctx, `SELECT auth_hash FROM pending_signups WHERE email_norm = $1`, email).Scan(&pending)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err == nil && Equal(Hash(authKey), pending) {
+		return httpx.ErrEmailUnverified
+	}
+	return httpx.ErrUnauthorized
 }
 
 // Recover signs in with recovery_auth_key; the session may only set a new password or sign out.
@@ -77,16 +87,28 @@ func (s *Service) Recover(ctx context.Context, email string, recoveryAuthKey []b
 	if !Equal(Hash(recoveryAuthKey), stored) {
 		return Session{}, nil, httpx.ErrUnauthorized
 	}
-	session, _, err := s.startSession(ctx, accountID, deviceName, "recovery")
+	session, _, err := s.startSession(ctx, accountID, deviceName, "recovery", "recovery_auth_hash", recoveryAuthKey)
 	return session, wrapped, err
 }
 
-func (s *Service) startSession(ctx context.Context, accountID, deviceName, scope string) (Session, plans.Account, error) {
+// startSession creates the device and session. The caller's key check ran outside this transaction, so it checks the
+// key again here with the account row locked FOR SHARE: a password change, recovery or deletion that committed in
+// between wins, and one that starts after waits for this session and then revokes it with the rest. column is
+// "auth_hash" or "recovery_auth_hash".
+func (s *Service) startSession(ctx context.Context, accountID, deviceName, scope, column string, key []byte) (Session, plans.Account, error) {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return Session{}, plans.Account{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var stored []byte
+	err = tx.QueryRow(ctx, `SELECT `+column+` FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR SHARE`, accountID).Scan(&stored)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && !Equal(Hash(key), stored) {
+		return Session{}, plans.Account{}, httpx.ErrUnauthorized
+	}
+	if err != nil {
+		return Session{}, plans.Account{}, err
+	}
 	now := s.Clock()
 	session, err := newSession(ctx, tx, accountID, deviceName, scope, now)
 	if err != nil {

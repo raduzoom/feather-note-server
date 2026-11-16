@@ -2,6 +2,7 @@
 package ratelimit
 
 import (
+	"crypto/sha256"
 	"math"
 	"net"
 	"net/http"
@@ -23,7 +24,14 @@ var (
 	AuthIP    = Rule{"auth-ip", 10, time.Minute}    // prelogin, login, recover, per IP
 	AuthEmail = Rule{"auth-email", 10, time.Minute} // the same, per email
 	Resend    = Rule{"resend", 3, time.Hour}        // per email
+	VerifyIP  = Rule{"verify-ip", 10, time.Minute}  // per IP
+	CodeEmail = Rule{"code-email", 5, time.Hour}    // signup and resend together, per email: codes and notices
+	ResendIP  = Rule{"resend-ip", 10, time.Minute}  // per IP, ahead of the per-email rules
 )
+
+// maxEntriesPerRule caps each rule's counters. A flood of new keys pushes out that rule's oldest windows first, so
+// memory stays bounded and the keys seen most recently keep their counts.
+const maxEntriesPerRule = 50_000
 
 // Decision is the outcome of one request against one rule.
 type Decision struct {
@@ -49,16 +57,53 @@ type window struct {
 	count int
 }
 
-// Limiter counts requests per rule and key.
+// opened records when a key's window started, in the order windows were opened.
+type opened struct {
+	key   [32]byte
+	start time.Time
+}
+
+// ruleState holds one rule's windows. Every window of a rule has the same length, so the order they were opened in is
+// also the order they expire in: expiry only ever looks at the front of the queue.
+type ruleState struct {
+	wins  map[[32]byte]*window
+	queue []opened
+	head  int
+}
+
+// pop takes the oldest entry off the queue and drops its window, if that is still the key's current one.
+func (r *ruleState) pop() {
+	q := r.queue[r.head]
+	r.head++
+	if r.head > len(r.queue)/2 { // keep the queue's memory proportional to what it holds
+		r.queue = append(r.queue[:0], r.queue[r.head:]...)
+		r.head = 0
+	}
+	if w := r.wins[q.key]; w != nil && w.start.Equal(q.start) {
+		delete(r.wins, q.key)
+	}
+}
+
+// Limiter counts requests per rule and key. Keys are stored as SHA-256, so a long key costs no more than a short one.
 type Limiter struct {
 	mu    sync.Mutex
 	clock func() time.Time
-	wins  map[string]*window
-	calls int
+	rules map[string]*ruleState
 }
 
 func New(clock func() time.Time) *Limiter {
-	return &Limiter{clock: clock, wins: map[string]*window{}}
+	return &Limiter{clock: clock, rules: map[string]*ruleState{}}
+}
+
+// entries is how many windows are kept, over all rules.
+func (l *Limiter) entries() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, r := range l.rules {
+		n += len(r.wins)
+	}
+	return n
 }
 
 // Allow counts one request.
@@ -66,18 +111,23 @@ func (l *Limiter) Allow(rule Rule, key string) Decision {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.clock()
-	if l.calls++; l.calls%1000 == 0 {
-		for k, w := range l.wins {
-			if now.Sub(w.start) >= time.Hour {
-				delete(l.wins, k)
-			}
-		}
+	r := l.rules[rule.Name]
+	if r == nil {
+		r = &ruleState{wins: map[[32]byte]*window{}}
+		l.rules[rule.Name] = r
 	}
-	k := rule.Name + "\x00" + key
-	w := l.wins[k]
+	for r.head < len(r.queue) && now.Sub(r.queue[r.head].start) >= rule.Window {
+		r.pop()
+	}
+	k := sha256.Sum256([]byte(key))
+	w := r.wins[k]
 	if w == nil || now.Sub(w.start) >= rule.Window {
+		for w == nil && len(r.wins) >= maxEntriesPerRule && r.head < len(r.queue) {
+			r.pop() // the rule's oldest window makes room
+		}
 		w = &window{start: now}
-		l.wins[k] = w
+		r.wins[k] = w
+		r.queue = append(r.queue, opened{k, now})
 	}
 	reset := rule.Window - now.Sub(w.start)
 	if w.count >= rule.Limit {
@@ -87,23 +137,35 @@ func (l *Limiter) Allow(rule Rule, key string) Decision {
 	return Decision{true, rule.Limit, rule.Limit - w.count, reset}
 }
 
-// ClientIP is the visitor's address. Behind a trusted proxy: the named header when set and present (Cloudflare's
-// Cf-Connecting-Ip), else the last X-Forwarded-For hop. Otherwise the peer address.
+// ClientIP is the visitor's address as a rate-limit key. Behind a trusted proxy: the named header when set and
+// present (Cloudflare's Cf-Connecting-Ip), else the last X-Forwarded-For hop. Otherwise the peer address. An IPv6
+// address counts as its /64, since one host usually holds a whole /64.
 func ClientIP(r *http.Request, trustProxy bool, header string) string {
 	if trustProxy && header != "" {
 		if v := strings.TrimSpace(r.Header.Get(header)); v != "" {
-			return v
+			return group(v)
 		}
 	}
 	if trustProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			hops := strings.Split(xff, ",")
-			return strings.TrimSpace(hops[len(hops)-1])
+			return group(strings.TrimSpace(hops[len(hops)-1]))
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		return group(r.RemoteAddr)
 	}
-	return host
+	return group(host)
+}
+
+func group(addr string) string {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return addr
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }

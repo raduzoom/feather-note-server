@@ -23,7 +23,7 @@ func TestSMTPFailureThenResendDelivers(t *testing.T) {
 	if code == "" {
 		t.Fatal("no code after the provider recovered")
 	}
-	if r := e.do(request{method: "POST", path: "/v1/auth/verify", body: map[string]any{"email": k.email, "code": code, "device_name": "Mac"}}); r.status != 200 {
+	if r := e.do(request{method: "POST", path: "/v1/auth/verify", body: k.verifyBody(code)}); r.status != 200 {
 		t.Fatalf("verify %d %s", r.status, r.body)
 	}
 }

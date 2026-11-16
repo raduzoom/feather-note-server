@@ -22,7 +22,13 @@ const (
 	codeLifetime    = 15 * time.Minute
 	pendingLifetime = 24 * time.Hour
 	maxAttempts     = 5
+	maxFailures     = 20 // failed checks per email per failureWindow, kept across new signups and resends
+	failureWindow   = 24 * time.Hour
 )
+
+// noCodeHash is the code hash of a pending signup for an email that already has an account. No 6-digit code
+// hashes to it, so that signup can never be verified, and no code is ever mailed for it.
+var noCodeHash = Hash([]byte("feather-no-code"))
 
 // Service implements the account lifecycle. Every method's errors are *httpx.Error or internal errors.
 type Service struct {
@@ -74,21 +80,22 @@ func ValidID(s string) bool {
 func validDeviceName(s string) bool { return utf8.RuneCountInString(s) <= 100 && utf8.ValidString(s) }
 
 // Signup starts an account. It succeeds the same way whether or not the email has one (it then sends a
-// notice instead of a code), so signup can't be used to find accounts.
+// notice instead of a code), so signup can't be used to find accounts. The pending signup is stored either
+// way, with noCodeHash when the email has an account, so login, verify and resend then answer the same too.
 func (s *Service) Signup(ctx context.Context, r SignupRequest) error {
 	email, err := NormalizeEmail(r.Email)
 	if err != nil || len(r.Salt) != 16 || !r.KDF.valid() || len(r.AuthKey) != 32 || len(r.RecoveryAuthKey) != 32 ||
 		len(r.WrappedMasterPassword) != 74 || len(r.WrappedMasterRecovery) != 74 || !ValidID(r.LibraryID) {
 		return httpx.InvalidRequest("Invalid signup fields.")
 	}
-	var exists bool
-	if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE email_norm = $1 AND deleted_at IS NULL)`, email).Scan(&exists); err != nil {
+	exists, err := s.accountExists(ctx, email)
+	if err != nil {
 		return err
 	}
-	if exists {
-		return s.Mailer.SendAccountExists(ctx, email)
-	}
 	code, codeHash := NewCode()
+	if exists {
+		codeHash = noCodeHash
+	}
 	kdf, _ := json.Marshal(r.KDF)
 	now := s.Clock()
 	_, err = s.DB.Exec(ctx, `
@@ -103,29 +110,50 @@ func (s *Service) Signup(ctx context.Context, r SignupRequest) error {
 	if err != nil {
 		return err
 	}
+	if exists {
+		return s.Mailer.SendAccountExists(ctx, email)
+	}
 	return s.Mailer.SendCode(ctx, email, code)
 }
 
-// Resend sends a new code for a pending signup; for any other email it does nothing, the same way.
+// Resend sends a new code for a pending signup; for any other email it does nothing, the same way. When the email
+// has an account it renews the pending signup the same way, keeps noCodeHash and sends the notice again.
 func (s *Service) Resend(ctx context.Context, emailText string) error {
 	email, err := NormalizeEmail(emailText)
 	if err != nil {
 		return httpx.InvalidRequest("Invalid email.")
 	}
+	exists, err := s.accountExists(ctx, email)
+	if err != nil {
+		return err
+	}
 	code, codeHash := NewCode()
+	if exists {
+		codeHash = noCodeHash
+	}
 	now := s.Clock()
 	tag, err := s.DB.Exec(ctx, `UPDATE pending_signups SET code_hash = $2, code_sent_at = $3, attempts = 0
 		WHERE email_norm = $1 AND created_at > $4`, email, codeHash, now, now.Add(-pendingLifetime))
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
+	if exists {
+		return s.Mailer.SendAccountExists(ctx, email)
+	}
 	return s.Mailer.SendCode(ctx, email, code)
 }
 
-// Verify confirms the code and creates the account, its first device and a full-scope session.
-func (s *Service) Verify(ctx context.Context, emailText, code, deviceName string) (Session, plans.Account, error) {
+func (s *Service) accountExists(ctx context.Context, email string) (bool, error) {
+	var exists bool
+	err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE email_norm = $1 AND deleted_at IS NULL)`, email).Scan(&exists)
+	return exists, err
+}
+
+// Verify confirms the code and creates the account, its first device and a full-scope session. The code counts only
+// together with the auth key the signup sent, so whoever replaces a pending signup can't be handed the account.
+func (s *Service) Verify(ctx context.Context, emailText, code string, authKey []byte, deviceName string) (Session, plans.Account, error) {
 	email, err := NormalizeEmail(emailText)
-	if err != nil || len(code) != 6 || !validDeviceName(deviceName) {
+	if err != nil || len(code) != 6 || len(authKey) != 32 || !validDeviceName(deviceName) {
 		return Session{}, plans.Account{}, httpx.InvalidRequest("Invalid fields.")
 	}
 	for _, c := range code {
@@ -143,25 +171,32 @@ func (s *Service) Verify(ctx context.Context, emailText, code, deviceName string
 		salt, kdf, authHash, recoveryHash, wrappedPw, wrappedRecov, codeHash []byte
 		library                                                              string
 		sentAt, createdAt                                                    time.Time
-		attempts                                                             int
+		attempts, failures                                                   int
+		failuresSince                                                        *time.Time
 	}
 	err = tx.QueryRow(ctx, `SELECT salt, kdf, auth_hash, recovery_auth_hash, wrapped_master_password, wrapped_master_recovery,
-		library_id, code_hash, code_sent_at, attempts, created_at FROM pending_signups WHERE email_norm = $1 FOR UPDATE`, email).
-		Scan(&p.salt, &p.kdf, &p.authHash, &p.recoveryHash, &p.wrappedPw, &p.wrappedRecov, &p.library, &p.codeHash, &p.sentAt, &p.attempts, &p.createdAt)
+		library_id, code_hash, code_sent_at, attempts, created_at, failures, failures_since FROM pending_signups WHERE email_norm = $1 FOR UPDATE`, email).
+		Scan(&p.salt, &p.kdf, &p.authHash, &p.recoveryHash, &p.wrappedPw, &p.wrappedRecov, &p.library, &p.codeHash, &p.sentAt, &p.attempts, &p.createdAt,
+			&p.failures, &p.failuresSince)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && now.Sub(p.createdAt) >= pendingLifetime {
 		return Session{}, plans.Account{}, httpx.ErrVerificationExpired
 	}
 	if err != nil {
 		return Session{}, plans.Account{}, err
 	}
-	if p.attempts >= maxAttempts {
+	windowStart := now.Add(-failureWindow)
+	if p.attempts >= maxAttempts || p.failures >= maxFailures && p.failuresSince != nil && p.failuresSince.After(windowStart) {
 		return Session{}, plans.Account{}, httpx.ErrVerificationInvalid
 	}
 	if now.Sub(p.sentAt) > codeLifetime {
 		return Session{}, plans.Account{}, httpx.ErrVerificationExpired
 	}
-	if !Equal(Hash([]byte(code)), p.codeHash) {
-		if _, err := tx.Exec(ctx, `UPDATE pending_signups SET attempts = attempts + 1 WHERE email_norm = $1`, email); err != nil {
+	codeOK, keyOK := Equal(Hash([]byte(code)), p.codeHash), Equal(Hash(authKey), p.authHash)
+	if !codeOK || !keyOK {
+		if _, err := tx.Exec(ctx, `UPDATE pending_signups SET attempts = attempts + 1,
+			failures = CASE WHEN failures_since IS NULL OR failures_since <= $2 THEN 1 ELSE failures + 1 END,
+			failures_since = CASE WHEN failures_since IS NULL OR failures_since <= $2 THEN $3 ELSE failures_since END
+			WHERE email_norm = $1`, email, windowStart, now); err != nil {
 			return Session{}, plans.Account{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {

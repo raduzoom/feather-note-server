@@ -104,7 +104,7 @@ func TestScriptedClient(t *testing.T) {
 		t.Fatal("signup", st, string(body))
 	}
 	code := mailer.LastCode(email)
-	st, body = call("POST", "/auth/verify", "", map[string]any{"email": email, "code": code, "device_name": "Scripted Mac"})
+	st, body = call("POST", "/auth/verify", "", map[string]any{"email": email, "code": code, "auth_key": b64(authKey), "device_name": "Scripted Mac"})
 	if st != 200 {
 		t.Fatal("verify", st, string(body))
 	}

@@ -173,13 +173,18 @@ func (k keys) signupBody() map[string]any {
 		"wrapped_master_recovery": b64(k.wrappedRecov), "library_id": k.library}
 }
 
+// verifyBody is POST /auth/verify's body with this signup's auth key.
+func (k keys) verifyBody(code string) map[string]any {
+	return map[string]any{"email": k.email, "code": code, "auth_key": b64(k.authKey), "device_name": "Mac"}
+}
+
 // account signs up and verifies; it returns the token and the verify response.
 func (e *env) account(k keys) (string, map[string]any) {
 	e.t.Helper()
 	if r := e.do(request{method: "POST", path: "/v1/auth/signup", body: k.signupBody()}); r.status != 202 {
 		e.t.Fatalf("signup %d %s", r.status, r.body)
 	}
-	r := e.do(request{method: "POST", path: "/v1/auth/verify", body: map[string]any{"email": k.email, "code": e.mail.LastCode(k.email), "device_name": "Mac"}})
+	r := e.do(request{method: "POST", path: "/v1/auth/verify", body: k.verifyBody(e.mail.LastCode(k.email))})
 	if r.status != 200 {
 		e.t.Fatalf("verify %d %s", r.status, r.body)
 	}

@@ -322,3 +322,40 @@ func TestPullShowsBlobSize(t *testing.T) {
 		t.Fatalf("%v", item)
 	}
 }
+
+// W-F7: a page stops once its metas reach 4 MiB, so one pull can't pin a huge response; has_more carries on.
+func TestPullPageStopsAtMetaBytes(t *testing.T) {
+	e := newEnv(t)
+	s := e.syncer("ana@example.com")
+	changes := make([]map[string]any, 70)
+	for i := range changes {
+		changes[i] = change(auth.NewID(), "tag", 0, false, rnd(65536), nil)
+	}
+	if r := s.push(changes...); r.status != 200 {
+		t.Fatalf("push %d %s", r.status, r.body)
+	}
+	seen, cursor, pages := map[string]bool{}, "", 0
+	for {
+		path := "/v1/sync/pull?limit=1000&library_id=" + s.library
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		r := e.do(request{method: "GET", path: path, token: s.token})
+		m := r.json(t)
+		list := m["items"].([]any)
+		pages++
+		if pages == 1 && (len(list) != 64 || m["has_more"] != true) {
+			t.Fatalf("first page: %d items, has_more %v", len(list), m["has_more"])
+		}
+		for _, it := range list {
+			seen[it.(map[string]any)["id"].(string)] = true
+		}
+		cursor = m["cursor"].(string)
+		if m["has_more"] != true {
+			break
+		}
+	}
+	if len(seen) != 70 || pages != 2 {
+		t.Fatalf("%d items in %d pages", len(seen), pages)
+	}
+}

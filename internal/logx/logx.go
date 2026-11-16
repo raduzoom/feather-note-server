@@ -34,6 +34,9 @@ func (r *recorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the connection (write deadlines).
+func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 func (r *recorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
 		r.status = 200

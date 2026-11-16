@@ -2,6 +2,8 @@ package ratelimit
 
 import (
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,7 +48,8 @@ func TestRules(t *testing.T) {
 		r Rule
 		n int
 		w time.Duration
-	}{{Signup, 5, time.Hour}, {AuthIP, 10, time.Minute}, {AuthEmail, 10, time.Minute}, {Resend, 3, time.Hour}} {
+	}{{Signup, 5, time.Hour}, {AuthIP, 10, time.Minute}, {AuthEmail, 10, time.Minute}, {Resend, 3, time.Hour},
+		{VerifyIP, 10, time.Minute}, {CodeEmail, 5, time.Hour}, {ResendIP, 10, time.Minute}} {
 		if c.r.Limit != c.n || c.r.Window != c.w {
 			t.Errorf("%s: %+v", c.r.Name, c.r)
 		}
@@ -81,5 +84,70 @@ func TestClientIPFromNamedHeader(t *testing.T) {
 	r.Header.Set("Cf-Connecting-Ip", "203.0.113.9")
 	if got := ClientIP(r, false, "Cf-Connecting-Ip"); got != "172.18.0.5" {
 		t.Fatalf("untrusted: %s", got)
+	}
+}
+
+// One host usually holds a whole IPv6 /64, so per-IP limits count the /64.
+func TestClientIPGroupsIPv6By64(t *testing.T) {
+	ip := func(xff string) string {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("X-Forwarded-For", xff)
+		return ClientIP(r, true, "")
+	}
+	a, b := ip("2001:db8:1:2:3:4:5:6"), ip("2001:DB8:1:2:ffff::1")
+	if a != b || a != "2001:db8:1:2::/64" {
+		t.Fatalf("same /64: %q %q", a, b)
+	}
+	if ip("2001:db8:1:3::1") == a {
+		t.Fatal("another /64 shares the key")
+	}
+	if got := ip("203.0.113.9"); got != "203.0.113.9" {
+		t.Fatalf("IPv4: %q", got)
+	}
+	if got := ip("::ffff:203.0.113.9"); got != "203.0.113.9" {
+		t.Fatalf("IPv4-mapped: %q", got)
+	}
+	if got := ip("not-an-ip"); got != "not-an-ip" {
+		t.Fatalf("unparsable: %q", got)
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "[2001:db8:9:9::1]:443"
+	if got := ClientIP(r, false, ""); got != "2001:db8:9:9::/64" {
+		t.Fatalf("peer address: %q", got)
+	}
+}
+
+// S-F2: a flood of new keys can't grow memory without bound, however long the keys are.
+func TestLimiterStaysBounded(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := New(func() time.Time { return now })
+	long := strings.Repeat("x", 1000)
+	for i := 0; i < 3*maxEntriesPerRule; i++ {
+		l.Allow(Resend, long+strconv.Itoa(i))
+	}
+	if n := l.entries(); n > maxEntriesPerRule {
+		t.Fatalf("%d entries for one rule, cap %d", n, maxEntriesPerRule)
+	}
+	// the newest keys are still counted
+	key := long + strconv.Itoa(3*maxEntriesPerRule-1)
+	for i := 0; i < 2; i++ {
+		l.Allow(Resend, key)
+	}
+	if l.Allow(Resend, key).Allowed {
+		t.Fatal("4th resend for a recent key allowed")
+	}
+}
+
+// Expired windows go a few at a time on later calls, not in a full sweep under the lock.
+func TestLimiterExpiresIncrementally(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := New(func() time.Time { return now })
+	for i := 0; i < 50; i++ {
+		l.Allow(AuthIP, strconv.Itoa(i))
+	}
+	now = now.Add(61 * time.Second)
+	l.Allow(AuthIP, "new")
+	if n := l.entries(); n != 1 {
+		t.Fatalf("%d entries after every other window expired", n)
 	}
 }

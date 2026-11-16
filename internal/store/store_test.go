@@ -26,7 +26,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		_ = rows.Scan(&v)
 		versions = append(versions, v)
 	}
-	if len(versions) != 1 || versions[0] != 1 {
+	if len(versions) != 2 || versions[0] != 1 || versions[1] != 2 {
 		t.Fatalf("versions %v", versions)
 	}
 	for _, table := range []string{"accounts", "pending_signups", "trial_records", "devices", "sessions", "items", "blobs"} {

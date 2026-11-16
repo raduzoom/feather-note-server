@@ -29,7 +29,8 @@ func (h *handlers) authRequest(w http.ResponseWriter, r *http.Request) (credenti
 	}
 	ip := h.ip(r)
 	ok := h.limit(w, func() ratelimit.Decision { return h.limiter.Allow(ratelimit.AuthIP, ip) },
-		func() ratelimit.Decision { return h.limiter.Allow(ratelimit.AuthEmail, email) })
+		// per email from each address, so a stranger can't use up the owner's attempts
+		func() ratelimit.Decision { return h.limiter.Allow(ratelimit.AuthEmail, emailKey(email)+"|"+ip) })
 	return req, email, ok
 }
 

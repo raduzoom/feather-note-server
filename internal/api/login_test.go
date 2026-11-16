@@ -3,6 +3,10 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -170,16 +174,95 @@ func TestDevices(t *testing.T) {
 func TestAuthRateLimits(t *testing.T) {
 	e := newEnv(t)
 	k := newKeys("ana@example.com")
-	for i := 0; i < 10; i++ {
-		e.login(k, "Mac")
+	login := func() response {
+		return e.do(request{method: "POST", path: "/v1/auth/login", ip: "7.7.7.7", body: map[string]any{"email": k.email, "auth_key": b64(k.authKey), "device_name": "Mac"}})
 	}
-	if r := e.login(k, "Mac"); r.status != 429 || r.header.Get("Retry-After") == "" {
-		t.Fatalf("11th login per email: %d", r.status)
+	for i := 0; i < 10; i++ {
+		login()
+	}
+	if r := login(); r.status != 429 || r.header.Get("Retry-After") == "" {
+		t.Fatalf("11th login for one email from one address: %d", r.status)
 	}
 	for i := 0; i < 10; i++ {
 		e.do(request{method: "POST", path: "/v1/auth/prelogin", ip: "8.8.8.8", body: map[string]any{"email": auth.NewID() + "@x.io"}})
 	}
 	if r := e.do(request{method: "POST", path: "/v1/auth/prelogin", ip: "8.8.8.8", body: map[string]any{"email": "z@x.io"}}); r.status != 429 {
 		t.Fatalf("11th prelogin per IP: %d", r.status)
+	}
+}
+
+// W-F14: a stranger hammering someone's email from their own address can't keep the owner from signing in.
+func TestStrangerCantLockOwnerOut(t *testing.T) {
+	e := newEnv(t)
+	k := newKeys("ana@example.com")
+	e.account(k)
+	for i := 0; i < 10; i++ {
+		e.do(request{method: "POST", path: "/v1/auth/prelogin", ip: "6.6.6.6", body: map[string]any{"email": "ana@example.com"}})
+	}
+	r := e.do(request{method: "POST", path: "/v1/auth/login", ip: "203.0.113.5", body: map[string]any{"email": k.email, "auth_key": b64(k.authKey), "device_name": "iPhone"}})
+	if r.status != 200 {
+		t.Fatalf("owner's login from their own address: %d %s", r.status, r.body)
+	}
+	if r := e.do(request{method: "POST", path: "/v1/auth/prelogin", ip: "6.6.6.6", body: map[string]any{"email": "ana@example.com"}}); r.status != 429 {
+		t.Fatalf("11th prelogin from the stranger's address: %d", r.status)
+	}
+}
+
+// S-F8: a login whose key check runs before a password change commits, and whose session would be created after,
+// must not end up with a live session: the change revokes every device, and the login must not slip past it.
+func TestLoginRacingPasswordChangeKeepsNoSession(t *testing.T) {
+	e := newEnv(t)
+	k := newKeys("ana@example.com")
+	e.account(k)
+	ctx := context.Background()
+	tx, err := e.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// a password change in progress, as SetPassword does it: the account row locked FOR UPDATE and the key replaced
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE email_norm = $1 FOR UPDATE`, k.email); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET auth_hash = $2 WHERE email_norm = $1`, k.email, hashOf(rnd(32))); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		body, _ := json.Marshal(map[string]any{"email": k.email, "auth_key": b64(k.authKey), "device_name": "Racer"})
+		req, _ := http.NewRequest("POST", e.srv.URL+"/v1/auth/login", bytes.NewReader(body))
+		req.Header.Set("X-Forwarded-For", "5.5.5.5")
+		res, err := testClient.Do(req)
+		if err != nil {
+			done <- -1
+			return
+		}
+		res.Body.Close()
+		done <- res.StatusCode
+	}()
+	// commit only once the login is waiting on the account row: its key check has already passed by then
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var waiting int
+		_ = e.db.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waiting)
+		if waiting > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the login never waited on the account row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM devices WHERE account_id = (SELECT id FROM accounts WHERE email_norm = $1)`, k.email); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status := <-done; status != 401 {
+		t.Fatalf("login racing the change: %d", status)
+	}
+	if n := e.count("SELECT count(*) FROM sessions"); n != 0 {
+		t.Fatalf("%d sessions survived the password change", n)
 	}
 }

@@ -17,7 +17,8 @@ func TestNormalizeEmail(t *testing.T) {
 	if a != b || a != "éva@x.io" {
 		t.Fatalf("%q %q", a, b)
 	}
-	for _, bad := range []string{"no-at", "@x", "a@", "a@b@c", ""} {
+	for _, bad := range []string{"no-at", "@x", "a@", "a@b@c", "",
+		"zz\nmail to victim@example.com: your code is 000000", "a\r@x.io", "a@x\x1b[2J.io", "a\u2028b@x.io", "a\u2029b@x.io", "a\x7f@x.io"} {
 		if _, err := NormalizeEmail(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}

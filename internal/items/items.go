@@ -23,8 +23,10 @@ import (
 const (
 	MaxChanges   = 100
 	MaxMetaBytes = 65536
-	DefaultLimit = 500
-	MaxLimit     = 1000
+	// MaxPageMetaBytes ends a pull page early once its items' metas add up to this, so one response stays small.
+	MaxPageMetaBytes = 4 << 20
+	DefaultLimit     = 500
+	MaxLimit         = 1000
 )
 
 // Change is one entry of a push.
@@ -298,17 +300,21 @@ func (s *Service) Pull(ctx context.Context, accountID, libraryID string, after i
 	}
 	defer rows.Close()
 	page := Page{Items: []Item{}, Cursor: Cursor(after)}
+	metaBytes := 0
 	for rows.Next() {
 		it, err := scanItem(rows)
 		if err != nil {
 			return Page{}, err
 		}
-		if len(page.Items) == limit {
+		if len(page.Items) == limit || metaBytes >= MaxPageMetaBytes {
 			page.HasMore = true
 			break
 		}
 		page.Items = append(page.Items, *it)
 		page.Cursor = Cursor(it.Seq)
+		if it.Meta != nil {
+			metaBytes += len(*it.Meta)
+		}
 	}
 	return page, rows.Err()
 }

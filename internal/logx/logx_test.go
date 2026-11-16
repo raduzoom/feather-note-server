@@ -33,3 +33,13 @@ func TestLogNeverContainsBodiesOrQueries(t *testing.T) {
 		}
 	}
 }
+
+// http.ResponseController reaches the connection through the recorder (pull's write deadline needs it).
+func TestRecorderUnwraps(t *testing.T) {
+	inner := httptest.NewRecorder()
+	var w http.ResponseWriter = &recorder{ResponseWriter: inner}
+	u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+	if !ok || u.Unwrap() != inner {
+		t.Fatal("recorder doesn't unwrap")
+	}
+}
