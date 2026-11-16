@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Runs the Feather Cloud backup every day at 03:30 (docs/hosting-mac-mini.md, "Backups").
-  Replace SERVER_REPO with the server repo's full path, then:
+  Replace SERVER_REPO with the server repo's full path and USER_HOME with your home folder (echo $HOME), then:
     cp deploy/macmini/app.feathermark.backup.plist ~/Library/LaunchAgents/
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.feathermark.backup.plist
 -->
@@ -20,6 +20,9 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 	</dict>
+	<!-- 077: everything the job writes is readable by this user only -->
+	<key>Umask</key>
+	<integer>63</integer>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>
@@ -28,8 +31,8 @@
 		<integer>30</integer>
 	</dict>
 	<key>StandardOutPath</key>
-	<string>/tmp/feather-backup.log</string>
+	<string>USER_HOME/Library/Logs/feather-backup.log</string>
 	<key>StandardErrorPath</key>
-	<string>/tmp/feather-backup.log</string>
+	<string>USER_HOME/Library/Logs/feather-backup.log</string>
 </dict>
 </plist>

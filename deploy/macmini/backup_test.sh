@@ -50,7 +50,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 	sleep 1
 done
 [ -n "$code" ] || { echo "backup test: no verification code" >&2; exit 1; }
-token="$(api -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$email\",\"code\":\"$code\",\"device_name\":\"bt\"}" \
+token="$(api -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$email\",\"code\":\"$code\",\"auth_key\":\"$auth\",\"device_name\":\"bt\"}" \
 	http://server:8420/v1/auth/verify | sed -E 's/.*"token":"([^"]+)".*/\1/')"
 
 head -c 5000 /dev/urandom > "$tmp/blob.bin"
@@ -67,6 +67,14 @@ PATH="$tmp/bin:$PATH" FEATHER_BACKUP_DIR="$tmp/backups" deploy/macmini/backup.sh
 backup="$tmp/backups/$(date +%Y-%m-%d)"
 [ ! -e "$tmp/trash-used" ] || { echo "backup test: pruning moved backups to the Trash, which frees no disk" >&2; exit 1; }
 [ "$(ls -1 "$tmp/backups" | wc -l | tr -d ' ')" = 14 ] || { echo "backup test: pruning kept $(ls -1 "$tmp/backups" | wc -l) folders, not 14" >&2; exit 1; }
+# S-F10, S-F11: the dump holds every account's password verifier, so only this user may read the backups
+mode() { stat -f '%Lp' "$1"; }
+for p in "$tmp/backups" "$backup"; do
+	[ "$(mode "$p")" = 700 ] || { echo "backup test: $p is mode $(mode "$p"), not 700" >&2; exit 1; }
+done
+for f in "$backup/postgres.dump" "$backup/s3data.tgz"; do
+	[ "$(mode "$f")" = 600 ] || { echo "backup test: $f is mode $(mode "$f"), not 600" >&2; exit 1; }
+done
 
 echo "backup test: changing the live stack, then restoring onto it"
 psql() { compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA' ; }

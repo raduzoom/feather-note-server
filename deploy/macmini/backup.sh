@@ -7,6 +7,9 @@
 # Writes $FEATHER_BACKUP_DIR/YYYY-MM-DD/ (default ~/FeatherCloudBackups) and keeps the newest 14 days.
 # Settings: FEATHER_COMPOSE_FILES (default: the Mac mini stack), COMPOSE_PROJECT_NAME (default: feather).
 set -euo pipefail
+# The dump holds every account's email, password verifier and wrapped keys: enough for offline password guessing.
+# Only this user may read the backups.
+umask 077
 
 cd "$(dirname "$0")/../.."
 read -ra FILES <<< "${FEATHER_COMPOSE_FILES:--f deploy/docker-compose.yml -f deploy/macmini/docker-compose.macmini.yml}"
@@ -15,6 +18,7 @@ project="${COMPOSE_PROJECT_NAME:-feather}"
 base="${FEATHER_BACKUP_DIR:-$HOME/FeatherCloudBackups}"
 dir="$base/$(date +%Y-%m-%d)"
 mkdir -p "$dir"
+chmod 700 "$base" "$dir" # folders made by older runs, or by hand, may be open to other users
 
 echo "backup: database"
 compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$dir/postgres.dump.partial"
@@ -37,6 +41,8 @@ for _ in $(seq 1 60); do
 done
 
 [ -s "$dir/postgres.dump" ] && [ -s "$dir/s3data.tgz" ] || { echo "backup: empty output in $dir" >&2; exit 1; }
+# the tarball is written inside a container, which doesn't use this shell's umask
+chmod 600 "$dir/postgres.dump" "$dir/s3data.tgz"
 
 # keep the newest 14 dated folders; only folders named YYYY-MM-DD are ever removed. They are deleted outright, not
 # moved to the Trash: nobody empties the Trash on a headless Mac, so the disk would fill.

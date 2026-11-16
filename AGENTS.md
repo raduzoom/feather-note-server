@@ -5,7 +5,7 @@ Rules for AI agents in this repo. `CLAUDE.md` is a symlink to this file. The sha
 ## Ports (when running or adding any server)
 
 - Feather server: 8420 (`-addr` flag or `FEATHER_ADDR` env).
-- S3-compatible storage (SeaweedFS, local dev): S3 API 8421, filer web UI 8422.
+- S3-compatible storage (SeaweedFS, local dev): S3 API 8421, filer web UI 8422, published only with `deploy/docker-compose.debug.yml` (the filer has no login).
 - Postgres: 5432 inside Docker only, never published to the host.
 - Never 3000.
 

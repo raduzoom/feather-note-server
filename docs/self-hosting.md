@@ -11,10 +11,12 @@ Feather Cloud is the sync server for FeatherMark. You can run your own: it store
 ## Start it
 
 1. Get the server: `git clone https://github.com/raduzoom/feather-note-server.git`, then `cd feather-note-server`.
-2. Create `deploy/.env` from `deploy/.env.example`. At minimum, change these:
-   - `POSTGRES_PASSWORD` and `S3_SECRET_KEY`: long random values;
-   - `FEATHER_SERVER_SECRET`: generate it with `openssl rand -hex 32`;
-   - `FEATHER_QUOTA_BYTES`: the storage each account may use (default 10 GB).
+2. Create `deploy/.env` from `deploy/.env.example` and fill in the three secrets; compose refuses to start without them:
+   - `POSTGRES_PASSWORD` and `S3_SECRET_KEY`: generate each with `openssl rand -hex 24`;
+   - `FEATHER_SERVER_SECRET`: generate it with `openssl rand -hex 32`.
+
+   Also check `FEATHER_QUOTA_BYTES`:
+   the storage each account may use (default 10 GB).
 3. Start the stack:
 
    ```bash
@@ -26,9 +28,11 @@ Feather Cloud is the sync server for FeatherMark. You can run your own: it store
 This runs three containers:
 - the server, on port 8420;
 - Postgres, which is reachable only inside Docker;
-- SeaweedFS for encrypted files, with its S3 API on port 8421 and web UI on 8422.
+- SeaweedFS for encrypted files, also reachable only inside Docker.
 
-Every published port is bound to `127.0.0.1`, so nothing is reachable from other machines until you add the reverse proxy below. Keep it that way: SeaweedFS's web UI has no login, and the server trusts the proxy to report client addresses.
+Only the server's port is published, and only on `127.0.0.1`, so nothing is reachable from other machines until you add the reverse proxy below. Keep it that way: the server trusts the proxy to report client addresses.
+
+To look inside the storage while developing, add `-f deploy/docker-compose.debug.yml` to the command above: it publishes SeaweedFS's S3 API on `127.0.0.1:8421` and its web UI on `127.0.0.1:8422`. That web UI has no login and can delete every file, so never use the debug file on a server.
 
 ## Put it behind HTTPS
 
@@ -68,7 +72,7 @@ Back up two Docker volumes, together:
 - `feather_pgdata`: accounts, devices and the item index;
 - `feather_s3data`: the encrypted files.
 
-Everything in them is encrypted on your devices before upload. Without your password or recovery key, a backup can't be read, by you or anyone else.
+Notes and attachments in them are encrypted on your devices before upload, so a backup alone doesn't show their contents. But the database also holds every account's email address and the data the server checks passwords against. Anyone with a backup can try to guess passwords offline, and a weak password that falls opens that account's notes. So keep backups readable only by you (`chmod 700` on the folder), and encrypt any copy you store elsewhere, for example on an encrypted disk or in an encrypted archive.
 
 ## Upgrade
 

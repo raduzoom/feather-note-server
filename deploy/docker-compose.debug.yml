@@ -1,0 +1,9 @@
+# Opt-in, for development: publishes the storage on this machine so you can look inside.
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.debug.yml up -d --wait
+# S3 API on 127.0.0.1:8421, SeaweedFS filer web UI on 127.0.0.1:8422. The filer has no login and accepts deletes on
+# every path, so never use this file on a server, and stop it when you're done.
+services:
+  s3:
+    ports:
+      - "127.0.0.1:8421:8333"
+      - "127.0.0.1:8422:8888"

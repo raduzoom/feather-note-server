@@ -72,7 +72,7 @@ cd ~/feather-note-server && docker compose -f deploy/docker-compose.yml -f deplo
 
 `deploy/macmini/backup.sh` saves the database and the encrypted files into `~/FeatherCloudBackups/<date>/` and keeps 14 days; older folders are deleted outright, not moved to the Trash. Install the daily 03:30 run:
 
-1. Edit `deploy/macmini/app.feathermark.backup.plist` and replace `SERVER_REPO` with the repo's full path, for example `/Users/you/feather-note-server`.
+1. Edit `deploy/macmini/app.feathermark.backup.plist`: replace `SERVER_REPO` with the repo's full path, for example `/Users/you/feather-note-server`, and `USER_HOME` with your home folder, for example `/Users/you`. The job logs to `~/Library/Logs/feather-backup.log`.
 2. Then run:
 
    ```bash
@@ -85,7 +85,9 @@ Run one backup by hand and check its folder has `postgres.dump` and `s3data.tgz`
 ~/feather-note-server/deploy/macmini/backup.sh
 ```
 
-Copy the backups folder off the Mac mini regularly, to another disk or a cloud drive. Everything in it is account metadata and data encrypted on users' devices.
+Copy the backups folder off the Mac mini regularly, to another disk or a cloud drive, **encrypted** (an encrypted disk, or an encrypted archive). Notes and attachments are encrypted on users' devices, but the database dump holds every account's email and the data the server checks passwords against: anyone with a copy can guess weak passwords offline and open those accounts' notes. The backup script keeps its folders readable by this user only (folders 700, files 600).
+
+If you installed the backup job before 2026-11-16, reinstall it: its log has moved out of `/tmp` and it now runs with a private umask. Run `launchctl bootout gui/$(id -u)/app.feathermark.backup`, edit the plist as in step 1, then step 2 again. The next backup also makes the existing folders private.
 
 To restore, run `deploy/macmini/restore.sh ~/FeatherCloudBackups/<date>`. It stops the server, empties the database and the file store, puts the backup's copies in their place, and starts everything again. Anything stored after that backup is gone. `deploy/macmini/backup_test.sh` proves the round trip on a throwaway stack.
 

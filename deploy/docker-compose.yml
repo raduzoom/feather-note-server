@@ -1,8 +1,8 @@
 # Feather Cloud stack: the server, Postgres and S3-compatible storage. docs/self-hosting.md explains the setup.
-# Postgres is deliberately not published to the host: 5432 stays inside Docker.
-# S3-compatible storage is SeaweedFS (MinIO no longer publishes images):
-# S3 API on host port 8421, filer web UI on 8422. Every published port is bound to 127.0.0.1: the filer UI has no
-# login, and only a reverse proxy on this machine should reach the server.
+# Only the server is published, on 127.0.0.1:8420, for a reverse proxy on this machine. Postgres (5432) and the
+# S3-compatible storage stay inside Docker: SeaweedFS (MinIO no longer publishes images) has a filer with no login
+# that accepts deletes on every path. docker-compose.debug.yml publishes its S3 API (8421) and filer UI (8422) on
+# 127.0.0.1 when you need to look inside. Passwords have no defaults: set them in deploy/.env.
 name: feather
 
 services:
@@ -10,7 +10,7 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-feather}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-feather-dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env (openssl rand -hex 24)}
       POSTGRES_DB: ${POSTGRES_DB:-feather}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -24,7 +24,7 @@ services:
     image: chrislusf/seaweedfs:4.30
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in deploy/.env (openssl rand -hex 24)}
       # Storage holds 1 GB volumes, at most this many (so about this many GB).
       # SeaweedFS's default of 8 volumes filled up after one bucket.
       SEAWEED_VOLUME_MAX: ${SEAWEED_VOLUME_MAX:-100}
@@ -36,9 +36,6 @@ services:
       - |
         printf '{"identities":[{"name":"feather","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
         exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024 -volume.max="$$SEAWEED_VOLUME_MAX"
-    ports:
-      - "127.0.0.1:8421:8333"
-      - "127.0.0.1:8422:8888"
     volumes:
       - s3data:/data
     healthcheck:
@@ -53,11 +50,11 @@ services:
       args:
         VERSION: ${FEATHER_VERSION:-dev}
     environment:
-      FEATHER_DATABASE_URL: postgres://${POSTGRES_USER:-feather}:${POSTGRES_PASSWORD:-feather-dev}@postgres:5432/${POSTGRES_DB:-feather}?sslmode=disable
+      FEATHER_DATABASE_URL: postgres://${POSTGRES_USER:-feather}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env (openssl rand -hex 24)}@postgres:5432/${POSTGRES_DB:-feather}?sslmode=disable
       FEATHER_S3_ENDPOINT: http://s3:8333
       FEATHER_S3_BUCKET: ${FEATHER_S3_BUCKET:-feather}
       FEATHER_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-feather}
-      FEATHER_S3_SECRET_KEY: ${S3_SECRET_KEY:-feather-dev-secret}
+      FEATHER_S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in deploy/.env (openssl rand -hex 24)}
       # required; generate with: openssl rand -hex 32
       FEATHER_SERVER_SECRET: ${FEATHER_SERVER_SECRET:?set FEATHER_SERVER_SECRET in deploy/.env (openssl rand -hex 32)}
       FEATHER_BILLING: ${FEATHER_BILLING:-off}
